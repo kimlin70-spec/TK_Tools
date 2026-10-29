@@ -1,6 +1,6 @@
 /* QR Patrol service worker — precaches the whole app so it runs fully offline.
  * Bump APP_VERSION on every deploy so phones pick up the new files when they are next online. */
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 const CACHE = 'qr-patrol-' + APP_VERSION;
 const ASSETS = [
   './',
@@ -13,6 +13,7 @@ const ASSETS = [
   './js/scanner.js',
   './js/labels.js',
   './js/export.js',
+  './js/report.js',
   './js/app.js',
   './lib/qrcode.js',
   './lib/jsQR.js',

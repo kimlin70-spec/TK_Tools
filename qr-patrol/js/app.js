@@ -1,8 +1,8 @@
 /* app.js — router, screens and bootstrap */
 (function () {
   'use strict';
-  const U = QP.util, DB = QP.db, L = QP.logic, SC = QP.scanner, LB = QP.labels, EX = QP.exporter;
-  const APP_VERSION = '1.0.0';
+  const U = QP.util, DB = QP.db, L = QP.logic, SC = QP.scanner, LB = QP.labels, EX = QP.exporter, RP = QP.report;
+  const APP_VERSION = '1.1.0';
   const $view = document.getElementById('view');
   const $modalRoot = document.getElementById('modal-root');
   const app = { current: null, seq: 0, installEvent: null, swReg: null, updateReady: false };
@@ -92,6 +92,44 @@
     if (!btn) return;
     btn.disabled = busy;
     if (label !== undefined) btn.textContent = label;
+  }
+
+  // Share a file through the Android share sheet; fall back to a download when sharing is not possible.
+  async function shareOrDownload(blob, name, title) {
+    try {
+      if (await U.shareBlob(blob, name, title)) return 'shared';
+    } catch (err) {
+      if (err && err.name === 'AbortError') return 'cancelled';
+      U.toast('Sharing was not possible. The file was saved to Downloads instead.');
+    }
+    U.downloadBlob(blob, name);
+    return 'downloaded';
+  }
+  async function runReport(el, fromKey, toKey, share) {
+    const label = el.textContent;
+    const cb = document.getElementById('rep-photos');
+    const photos = cb ? cb.checked : true;
+    await DB.setMeta('reportPhotos', photos);
+    setBusy(el, true, 'Creating report…');
+    try {
+      const blob = await RP.buildReportPDF(fromKey, toKey, { photos });
+      const name = RP.reportFileName(fromKey, toKey);
+      if (share) await shareOrDownload(blob, name, 'Patrol report');
+      else { U.downloadBlob(blob, name); U.toast('Report saved to Downloads (' + U.fmtBytes(blob.size) + ')'); }
+    } catch (err) { U.toast('Report failed: ' + (err && err.message || err)); }
+    setBusy(el, false, label);
+  }
+  function reportCardHTML(reportPhotos, canShare, title, intro) {
+    return `
+      <section class="card">
+        <div class="card-title"><h2>${title}</h2></div>
+        <p class="muted small">${intro}</p>
+        <label class="row gap" style="margin-bottom:12px;font-size:0.98rem"><input type="checkbox" id="rep-photos" ${reportPhotos ? 'checked' : ''} style="width:24px;height:24px"> Include photos</label>
+        <div class="stack">
+          <button class="btn btn-primary" data-action="report">Download PDF report</button>
+          ${canShare ? '<button class="btn btn-outline" data-action="report-share">Share PDF report</button>' : ''}
+        </div>
+      </section>`;
   }
 
   // ---------------- Router ----------------
@@ -517,7 +555,8 @@
     let day = r.params.get('d') || today;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) day = today;
     const pf = r.params.get('p') || '';
-    const [allPlaces, dayRecs, allRecs, settings] = await Promise.all([DB.getPlaces(true), DB.getRecordsByDate(day), DB.getAllRecords(), DB.getSettings()]);
+    const [allPlaces, dayRecs, allRecs, settings, reportPhotos] = await Promise.all([DB.getPlaces(true), DB.getRecordsByDate(day), DB.getAllRecords(), DB.getSettings(), DB.getMeta('reportPhotos', true)]);
+    const canShare = U.canShareFiles();
     const pm = new Map(allPlaces.map((p) => [p.id, p]));
     const pName = (pid) => (pm.get(pid) || { name: '(deleted place)' }).name;
     const working = L.isWorkingDay(day, settings);
@@ -572,9 +611,12 @@
         ${day !== today ? `<a class="btn btn-outline" href="${link(today, pf)}">Today</a>` : ''}
       </div>
       <section class="card"><div class="card-title"><h2>Records <span class="badge">${events.filter((e) => e.kind === 'record').length}</span></h2></div>${timeline}</section>
-      <section class="card"><div class="card-title"><h2>Missed checks <span class="badge ${missed.length && working ? 'badge-action' : ''}">${working ? missed.length : '–'}</span></h2></div>${missedHtml}</section>`;
+      <section class="card"><div class="card-title"><h2>Missed checks <span class="badge ${missed.length && working ? 'badge-action' : ''}">${working ? missed.length : '–'}</span></h2></div>${missedHtml}</section>
+      ${reportCardHTML(reportPhotos, canShare, 'Daily report (PDF)', 'Everything from this day in one file: records with notes and photos, missed checks and open actions. Send it to the manager.')}`;
     const actions = withGlobal({
       'rec-detail': (el) => showRecordDetail(el.dataset.id),
+      'report': (el) => runReport(el, day, day, false),
+      'report-share': (el) => runReport(el, day, day, true),
       'pick': () => { const i = document.getElementById('date-input'); if (!i) return; if (i.showPicker) { try { i.showPicker(); return; } catch (e) { /* fall through */ } } i.click(); },
     });
     function mount(root) {
@@ -595,7 +637,7 @@
       <section class="card"><ul class="menu">
         <li><a href="#/places">Places <span class="muted small">(${places.length})</span></a></li>
         <li><a href="#/labels">QR labels (print / PDF)</a></li>
-        <li><a href="#/export">Excel export &amp; backup</a></li>
+        <li><a href="#/export">Reports, Excel &amp; backup</a></li>
       </ul></section>
       <section class="card">
         <h2>Working days</h2>
@@ -803,19 +845,24 @@
   async function viewExport() {
     const today = U.todayKey();
     const first = today.slice(0, 8) + '01';
-    const [lastBackupTs, recordCount, placeCount] = await Promise.all([DB.getMeta('lastBackupTs', 0), DB.countRecords(), DB.getPlaces(true).then((p) => p.length)]);
+    const [lastBackupTs, recordCount, placeCount, reportPhotos] = await Promise.all([DB.getMeta('lastBackupTs', 0), DB.countRecords(), DB.getPlaces(true).then((p) => p.length), DB.getMeta('reportPhotos', true)]);
     const canShare = U.canShareFiles();
     const html = `
-      <div class="page-head"><div>${backLink('#/settings', 'Settings')}<h1>Export &amp; backup</h1></div></div>
+      <div class="page-head"><div>${backLink('#/settings', 'Settings')}<h1>Reports &amp; backup</h1></div></div>
+      <section class="card">
+        <h2>Period</h2>
+        <div class="row gap">
+          <label class="field" style="flex:1;margin-bottom:0"><span>From</span><input type="date" id="exp-from" value="${first}" max="${today}"></label>
+          <label class="field" style="flex:1;margin-bottom:0"><span>To</span><input type="date" id="exp-to" value="${today}" max="${today}"></label>
+        </div>
+        <p class="muted small" style="margin:8px 0 0">Used by the PDF report and the Excel export below. For a single day's report you can also use History.</p>
+      </section>
+      ${reportCardHTML(reportPhotos, canShare, 'PDF report', 'One section per day: records with notes and photos, missed checks, plus the open actions. Good for a weekly review.')}
       <section class="card">
         <h2>Excel export</h2>
-        <p class="muted small">Sheets: Records, Open actions, Missed checks.</p>
-        <div class="row gap">
-          <label class="field" style="flex:1"><span>From</span><input type="date" id="exp-from" value="${first}" max="${today}"></label>
-          <label class="field" style="flex:1"><span>To</span><input type="date" id="exp-to" value="${today}" max="${today}"></label>
-        </div>
+        <p class="muted small">Sheets: Records, Open actions, Missed checks. Photos are not included in Excel.</p>
         <div class="stack">
-          <button class="btn btn-primary" data-action="excel">Download Excel (.xlsx)</button>
+          <button class="btn btn-outline" data-action="excel">Download Excel (.xlsx)</button>
           ${canShare ? '<button class="btn btn-outline" data-action="excel-share">Share Excel</button>' : ''}
         </div>
       </section>
@@ -856,14 +903,16 @@
       try {
         const blob = await EX.buildBackupBlob();
         const name = 'qr-patrol_backup_' + U.fileStamp() + '.json';
-        if (share) { if (!(await U.shareBlob(blob, name, 'QR Patrol backup'))) U.downloadBlob(blob, name); }
-        else U.downloadBlob(blob, name);
+        const how = share ? await shareOrDownload(blob, name, 'QR Patrol backup') : (U.downloadBlob(blob, name), 'downloaded');
+        if (how === 'cancelled') { setBusy(el, false, label); return; }
         await DB.setMeta('lastBackupTs', Date.now());
         U.toast('Backup file created (' + U.fmtBytes(blob.size) + ')');
         render();
       } catch (err) { if (!(err && err.name === 'AbortError')) U.toast('Backup failed: ' + (err && err.message || err)); setBusy(el, false, label); }
     }
     const actions = withGlobal({
+      'report': (el) => { const rg = range(); if (rg) runReport(el, rg.from, rg.to, false); },
+      'report-share': (el) => { const rg = range(); if (rg) runReport(el, rg.from, rg.to, true); },
       'excel': (el) => excel(el, false),
       'excel-share': (el) => excel(el, true),
       'backup': (el) => backup(el, false),

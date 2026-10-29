@@ -24,10 +24,10 @@
 | **Home** | 오늘 점검할 장소 목록과 상태(오전/오후 완료·미완료·누락), 미조치 목록(Open actions), 진행률 |
 | **Scan** | 카메라로 QR 스캔 → 장소명 표시 → **OK / Action needed** 큰 버튼. 짧은 메모·사진(압축 저장)은 선택 사항. 라벨이 손상된 경우 "Can't scan? Select place"로 수동 선택(기록에 `manual` 표시) |
 | **후속 확인** | 그 장소에 미완료 "Action needed"가 있으면, 이전 메모·사진을 먼저 보여주고 **Done / Not yet**을 선택한 뒤 평소 점검(OK / Action needed)을 진행 |
-| **History** | 날짜별 기록(◀ ▶ 이동, 달력 선택), 장소별 필터, 후속 확인 이력, **누락된 점검(Missed checks)** 표시. 기록을 누르면 상세·사진·삭제 |
+| **History** | 날짜별 기록(◀ ▶ 이동, 달력 선택), 장소별 필터, 후속 확인 이력, **누락된 점검(Missed checks)** 표시. 기록을 누르면 상세·사진·삭제. 맨 아래 **Daily report (PDF)** 버튼으로 그날 보고서 생성 |
 | **Settings → Places** | 장소 추가/수정/삭제(장소명, 구역, 점검 주기: 하루 1회 또는 2회). 하루 2회는 **오전(12시 전)·오후(12시 후)** 회차로 구분. 삭제한 장소는 복원 가능 |
 | **Settings → QR labels** | 장소마다 QR 1개(내용은 장소 ID만). A4 한 장에 6/8/15개 배치 미리보기, **인쇄 / PDF 저장(시스템 대화상자)**, **PDF 파일 다운로드**, **PDF 공유** |
-| **Settings → Excel export & backup** | 엑셀 내보내기(기록 + 미조치 + 누락 시트), 전체 데이터 **백업 파일(.json) 저장/공유**, **복원** |
+| **Settings → Reports, Excel & backup** | 기간별 **PDF 보고서**(기록·메모·사진·누락·미조치), 엑셀 내보내기(기록 + 미조치 + 누락 시트), 전체 데이터 **백업 파일(.json) 저장/공유**, **복원** |
 | **Settings** | 근무 요일(누락 계산에 사용, 기본 월~금), 앱 설치 버튼, 업데이트 확인, **샘플 장소 불러오기**, **전체 초기화(Reset all data)** |
 
 처음 실행하면 테스트용 **샘플 장소 12개**가 자동으로 들어 있습니다. 실제 사용 전에 `Settings → Reset all data`로 모두 지운 뒤 실제 장소를 등록하세요.
@@ -107,12 +107,38 @@
 6. 하루 2회 장소는 **12시 이전 = AM**, **12시 이후 = PM** 으로 자동 구분됩니다.
 7. **History**에서 날짜별 기록과 **누락(Missed)** 을 확인합니다. 누락은 Settings의 **근무 요일(Working days)** 에만 계산됩니다(기본 월~금, 주말 근무 시 토/일을 켜 주세요).
 
+## 4-1. 일일 보고서 PDF (관리자 확인용)
+
+하우스키퍼가 순찰을 마친 뒤 버튼 하나로 그날의 보고서를 만들고, 관리자는 폰이나 PC에서 PDF만 열어 보면 됩니다.
+
+1. **History** 탭 → 날짜 확인(기본 오늘) → 맨 아래 **Daily report (PDF)** 카드.
+2. **Include photos** 체크(기본 켜짐) → **Download PDF report**(다운로드 폴더에 저장) 또는 **Share PDF report**(바로 전송).
+3. 보고서 내용: 요약(완료/누락/조치 필요/미조치 수), 시간순 기록(장소·결과·메모·**사진**), 후속 확인(Done / Not yet), 누락 점검, 현재 미조치 목록.
+4. 여러 날을 한 번에 보려면 **Settings → Reports, Excel & backup → Period**에서 기간을 정하고 **PDF report**를 만듭니다(주간 보고용). 날짜마다 한 섹션씩 들어갑니다.
+
+파일 크기는 하루치(사진 4~5장) 약 0.3~0.5MB, 일주일치 약 1~2MB입니다. 사진을 빼면 더 작아집니다.
+
+## 4-2. 파일 보내기: 이메일 계정이 없는 공용폰에서
+
+**Share** 버튼을 누르면 안드로이드 공유 화면이 뜨고, 그 폰에 설치된 앱만 보입니다. 계정이 전혀 없는 공용폰이라면 아래 방법 중 하나를 쓰면 됩니다.
+
+| 방법 | 계정 필요 | 설명 |
+|------|-----------|------|
+| **Quick Share(퀵쉐어 / Nearby Share)** | 없음 | 공유 화면에서 Quick Share 선택 → 가까이 있는 **관리자 폰**이나 **Quick Share 앱이 있는 Windows PC**로 바로 전송. 사무실에서 매일 넘기기에 가장 간단합니다. 받는 쪽은 설정에서 "모든 사람에게 공개"로 잠깐 켜 두면 됩니다 |
+| **블루투스** | 없음 | 공유 화면에서 Bluetooth 선택 → 페어링된 폰/PC로 전송 |
+| **USB 케이블** | 없음 | 폰을 사무실 PC에 연결 → 내부 저장소 **Download** 폴더에서 `patrol-report_날짜.pdf` 복사 |
+| **사무실 와이파이 프린터** | 없음 | PDF를 열고 인쇄, 또는 QR labels 화면의 **Print** 버튼처럼 안드로이드 인쇄 기능으로 바로 출력(프린터가 와이파이 인쇄를 지원해야 함) |
+| **전용 구글 계정 1개** | 공용 계정 | 사람 계정이 아니라 "순찰폰 계정"(예: `tk.patrol@gmail.com`)을 하나 만들어 폰에 로그인해 두면 **Gmail**로 관리자에게 보내거나 **Google Drive**에 자동 보관할 수 있습니다. 비밀번호는 관리자가 보관 |
+| **카카오톡** | 전화번호 | 폰에 유심(전화번호)이 있어야 가입 가능. 업무용 계정으로 쓰면 공유 화면에서 바로 전송 |
+
+권장: 관리자가 매일 같은 사무실에 있다면 **Quick Share로 관리자 폰에 전송**, 보관이 필요하면 **전용 구글 계정 + Drive**를 함께 쓰는 조합이 가장 손이 덜 갑니다. 백업 파일(.json)도 같은 방법으로 보내면 됩니다.
+
 ## 5. 데이터 백업 / 복원 / 엑셀
 
 데이터는 **폰 안에만** 있습니다. 폰 분실·초기화·교체에 대비해 **주 1회 이상 백업**하세요. 7일 이상 백업이 없으면 Home 화면에 노란 안내가 뜹니다.
 
 ### 백업 (권장: 매주 금요일 사무실에서)
-1. **Settings → Excel export & backup → Backup**.
+1. **Settings → Reports, Excel & backup → Backup**.
 2. **Download backup (.json)** → 폰의 다운로드 폴더에 `qr-patrol_backup_날짜.json` 저장
    또는 **Share backup** → 이메일/메신저/클라우드로 사무실 PC에 보관.
 3. 백업 파일 하나에 장소 + 기록 + 사진 + 설정이 모두 들어 있습니다.
@@ -120,11 +146,11 @@
 ### 복원 (새 폰 또는 초기화 후)
 1. 새 폰에 앱을 설치합니다(2번 참고).
 2. 백업 파일(.json)을 새 폰으로 옮깁니다(이메일 첨부 다운로드 등).
-3. **Settings → Excel export & backup → Restore → Choose backup file…** → 파일 선택 → **Restore**.
+3. **Settings → Reports, Excel & backup → Restore → Choose backup file…** → 파일 선택 → **Restore**.
    ※ 복원하면 폰에 있던 기존 데이터는 모두 백업 내용으로 **대체**됩니다.
 
 ### 엑셀 내보내기 (보고용)
-1. **Settings → Excel export & backup → Excel export** 에서 기간(From / To) 선택.
+1. **Settings → Reports, Excel & backup → Period** 에서 기간(From / To) 선택.
 2. **Download Excel (.xlsx)** 또는 **Share Excel**.
 3. 시트 구성: **Records**(모든 기록), **Open actions**(현재 미조치 목록), **Missed checks**(기간 내 누락 점검).
 
@@ -166,6 +192,7 @@ TK_Tools/
    │  ├─ scanner.js        # 카메라 QR 스캔(BarcodeDetector → jsQR 대체)
    │  ├─ labels.js         # QR 라벨 시트(HTML 인쇄용 + jsPDF PDF)
    │  ├─ export.js         # 엑셀 내보내기(SheetJS), 백업 파일
+   │  ├─ report.js         # PDF 보고서(일일/기간, 사진 포함)
    │  └─ app.js            # 화면(라우팅, Home/Scan/Check/History/Settings…)
    ├─ lib/                 # 오프라인용 라이브러리(저장소에 포함): jsQR, qrcode-generator, jsPDF, SheetJS
    └─ icons/               # 앱 아이콘
