@@ -36,6 +36,11 @@
 
 ## 1. GitHub Pages 켜는 법 (최초 1회)
 
+> **먼저 확인: 저장소가 공개(Public)여야 합니다.**
+> 무료 계정에서는 GitHub Pages를 공개 저장소에서만 쓸 수 있습니다. 비공개(Private) 저장소에서 Pages를 켜려 하면 "업그레이드(Pro)" 안내가 나옵니다.
+> 공개로 바꾸는 방법: **Settings → General → 맨 아래 Danger Zone → Change repository visibility → Change to public** → 저장소 이름을 입력해 확인.
+> 이 저장소에는 앱 코드만 있고 순찰 기록·장소 데이터는 폰 안에만 저장되므로, 공개해도 업무 데이터가 노출되지 않습니다. (QR에도 무작위 ID만 들어 있습니다.)
+
 1. GitHub에서 이 저장소(`kimlin70-spec/TK_Tools`)를 엽니다.
 2. 상단 **Settings** 탭 → 왼쪽 메뉴 **Pages**.
 3. **Build and deployment** 에서
