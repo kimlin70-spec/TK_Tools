@@ -30,7 +30,7 @@ body {
   line-height: 1.4;
   color: var(--text);
   background: var(--bg);
-  padding-top: var(--top-h);
+  padding-top: calc(var(--top-h) + env(safe-area-inset-top));
   padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
   -webkit-tap-highlight-color: transparent;
 }
@@ -47,7 +47,8 @@ a { color: var(--primary); }
 
 /* Top bar */
 .topbar {
-  position: fixed; top: 0; left: 0; right: 0; height: var(--top-h);
+  position: fixed; top: 0; left: 0; right: 0; height: calc(var(--top-h) + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
   background: var(--primary); color: #fff; z-index: 20;
   box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
@@ -217,7 +218,7 @@ details.panel .panel-body { padding: 0 0 12px; }
 .bottomnav a.nav-scan svg { width: 28px; height: 28px; }
 
 /* Modal */
-.modal-backdrop { position: fixed; inset: 0; background: rgba(16,24,40,0.5); z-index: 50; display: flex; align-items: flex-end; justify-content: center; padding: 0; }
+.modal-backdrop { position: fixed; inset: 0; background: rgba(16,24,40,0.5); z-index: 50; display: flex; align-items: flex-end; justify-content: center; padding: 0; padding-top: env(safe-area-inset-top); }
 .modal { background: #fff; width: 100%; max-width: 640px; max-height: 88vh; overflow: auto; border-radius: 18px 18px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); box-shadow: 0 -4px 20px rgba(0,0,0,0.2); }
 .modal h2 { margin-bottom: 10px; }
 .modal-actions { display: flex; gap: 10px; margin-top: 16px; }

@@ -42,6 +42,29 @@ window.QP = window.QP || {};
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
   function vibrate(pattern) { try { if (navigator.vibrate) navigator.vibrate(pattern || 80); } catch (e) { /* ignore */ } }
+  function isIOS() { return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
+  function isStandalone() { return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true; }
+  // Short confirmation beep (iPhones have no vibration API). The AudioContext is created on the first user gesture.
+  let audioCtx = null;
+  function primeAudio() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!audioCtx && AC) audioCtx = new AC();
+      if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    } catch (e) { /* no audio */ }
+  }
+  function beep(freq, ms) {
+    try {
+      if (!audioCtx || audioCtx.state !== 'running') return;
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain(), t = audioCtx.currentTime, d = (ms || 120) / 1000;
+      o.type = 'sine'; o.frequency.value = freq || 1320;
+      g.gain.setValueAtTime(0.12, t); g.gain.exponentialRampToValueAtTime(0.0005, t + d);
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(t); o.stop(t + d + 0.02);
+    } catch (e) { /* ignore */ }
+  }
+  document.addEventListener('pointerdown', primeAudio, { passive: true });
+  document.addEventListener('keydown', primeAudio, { passive: true });
 
   function compressImage(file, maxDim, quality) {
     maxDim = maxDim || 1280; quality = quality || 0.72;
@@ -110,6 +133,6 @@ window.QP = window.QP || {};
 
   QP.util = {
     pad2, DAYS, MONTHS, dateKey, parseKey, todayKey, addDays, slotOf, fmtTime, fmtDateKey, fmtShortDate, fmtDateTime, fmtFull,
-    daysSince, fileStamp, uid, placeId, esc, vibrate, compressImage, downloadBlob, canShareFiles, shareBlob, toast, fmtBytes, readFileText,
+    daysSince, fileStamp, uid, placeId, esc, vibrate, isIOS, isStandalone, beep, compressImage, downloadBlob, canShareFiles, shareBlob, toast, fmtBytes, readFileText,
   };
 })();

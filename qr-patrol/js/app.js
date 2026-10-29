@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const U = QP.util, DB = QP.db, L = QP.logic, SC = QP.scanner, LB = QP.labels, EX = QP.exporter, RP = QP.report;
-  const APP_VERSION = '1.1.0';
+  const APP_VERSION = '1.2.0';
   const $view = document.getElementById('view');
   const $modalRoot = document.getElementById('modal-root');
   const app = { current: null, seq: 0, installEvent: null, swReg: null, updateReady: false };
@@ -94,18 +94,38 @@
     if (label !== undefined) btn.textContent = label;
   }
 
-  // Share a file through the Android share sheet; fall back to a download when sharing is not possible.
-  async function shareOrDownload(blob, name, title) {
-    try {
-      if (await U.shareBlob(blob, name, title)) return 'shared';
-    } catch (err) {
-      if (err && err.name === 'AbortError') return 'cancelled';
-      U.toast('Sharing was not possible. The file was saved to Downloads instead.');
-    }
-    U.downloadBlob(blob, name);
-    return 'downloaded';
+  /* A generated file is offered in a modal with Share / Download buttons. The share call runs synchronously
+   * inside the tap handler, which iPhones require. On iPhones the share sheet also offers "Save to Files",
+   * so the download button is hidden there (downloads are unreliable in iOS home-screen apps). */
+  function offerFile(o) {
+    const canShare = U.canShareFiles(), ios = U.isIOS();
+    const showDownload = !(ios && canShare);
+    const m = openModal(`
+      <h2>${U.esc(o.title || 'File ready')}</h2>
+      <p><b style="word-break:break-all">${U.esc(o.name)}</b><br><span class="muted small">${U.fmtBytes(o.blob.size)}${o.note ? ' · ' + U.esc(o.note) : ''}</span></p>
+      <div class="stack mt">
+        ${canShare ? `<button class="btn btn-primary btn-lg" data-m="share">Share…</button>` : ''}
+        ${showDownload ? `<button class="btn ${canShare ? 'btn-outline' : 'btn-primary btn-lg'}" data-m="download">Download to this phone</button>` : ''}
+        <button class="btn btn-link" data-close>Close</button>
+      </div>
+      <p class="muted small center" style="margin:10px 0 0">${ios && canShare ? 'Share opens AirDrop, Mail, Messages and "Save to Files".' : (canShare ? 'Share opens the apps on this phone (Quick Share, Bluetooth, messenger, mail…).' : 'The file is saved in the Downloads folder.')}</p>`);
+    const shareBtn = m.querySelector('[data-m=share]');
+    if (shareBtn) shareBtn.onclick = () => {
+      const file = new File([o.blob], o.name, { type: o.blob.type });
+      let p;
+      try { p = navigator.share({ files: [file], title: o.title || o.name }); } catch (err) { p = Promise.reject(err); }
+      p.then(() => { closeModal(); if (o.onDelivered) o.onDelivered('shared'); })
+        .catch((err) => { if (err && err.name === 'AbortError') return; U.toast('Sharing failed' + (showDownload ? '. Try Download instead.' : '.')); });
+    };
+    const dl = m.querySelector('[data-m=download]');
+    if (dl) dl.onclick = () => {
+      U.downloadBlob(o.blob, o.name);
+      closeModal();
+      U.toast('Saved to Downloads: ' + o.name);
+      if (o.onDelivered) o.onDelivered('downloaded');
+    };
   }
-  async function runReport(el, fromKey, toKey, share) {
+  async function runReport(el, fromKey, toKey) {
     const label = el.textContent;
     const cb = document.getElementById('rep-photos');
     const photos = cb ? cb.checked : true;
@@ -113,23 +133,22 @@
     setBusy(el, true, 'Creating report…');
     try {
       const blob = await RP.buildReportPDF(fromKey, toKey, { photos });
-      const name = RP.reportFileName(fromKey, toKey);
-      if (share) await shareOrDownload(blob, name, 'Patrol report');
-      else { U.downloadBlob(blob, name); U.toast('Report saved to Downloads (' + U.fmtBytes(blob.size) + ')'); }
+      offerFile({ blob, name: RP.reportFileName(fromKey, toKey), title: 'Patrol report (PDF)', note: photos ? 'with photos' : 'without photos' });
     } catch (err) { U.toast('Report failed: ' + (err && err.message || err)); }
     setBusy(el, false, label);
   }
-  function reportCardHTML(reportPhotos, canShare, title, intro) {
+  function reportCardHTML(reportPhotos, title, intro) {
     return `
       <section class="card">
         <div class="card-title"><h2>${title}</h2></div>
         <p class="muted small">${intro}</p>
         <label class="row gap" style="margin-bottom:12px;font-size:0.98rem"><input type="checkbox" id="rep-photos" ${reportPhotos ? 'checked' : ''} style="width:24px;height:24px"> Include photos</label>
-        <div class="stack">
-          <button class="btn btn-primary" data-action="report">Download PDF report</button>
-          ${canShare ? '<button class="btn btn-outline" data-action="report-share">Share PDF report</button>' : ''}
-        </div>
+        <button class="btn btn-primary btn-block" data-action="report">Create PDF report</button>
       </section>`;
+  }
+  function iosInstallHint() {
+    if (!U.isIOS() || U.isStandalone()) return '';
+    return '<div class="banner info"><span>iPhone: in Safari tap the <b>Share</b> button (square with arrow), then <b>Add to Home Screen</b>. Always open the app from that icon.</span></div>';
   }
 
   // ---------------- Router ----------------
@@ -239,6 +258,7 @@
       ${!working ? '<div class="banner info">Not a working day. Checks are optional today.</div>' : ''}
       ${backupDue ? `<div class="banner warn"><span>${lastBackupTs ? 'Last backup was ' + U.daysSince(lastBackupTs) + ' days ago.' : 'No backup yet.'}</span><a class="btn btn-outline" href="#/export">Back up</a></div>` : ''}
       ${app.installEvent && !standalone ? '<div class="banner info"><span>Install the app on the home screen for offline use.</span><button class="btn btn-primary" data-action="install">Install</button></div>' : ''}
+      ${iosInstallHint()}
       <section class="card">
         <div class="card-title"><h2>Open actions <span class="badge ${open.length ? 'badge-action' : ''}">${open.length}</span></h2></div>
         ${openHtml}
@@ -347,7 +367,7 @@
     async function onCode(text) {
       const id = String(text).trim().toUpperCase();
       const place = await DB.getPlace(id);
-      if (place && !place.deleted) { U.vibrate(80); location.hash = '#/check/' + encodeURIComponent(place.id); return; }
+      if (place && !place.deleted) { U.vibrate(80); U.beep(); location.hash = '#/check/' + encodeURIComponent(place.id); return; }
       U.vibrate([40, 40, 40]);
       if (place && place.deleted) showOverlay(`"${place.name}" was deleted. Restore it in Settings → Places.`);
       else if (/^[A-Z0-9]{4,10}$/.test(id)) showOverlay(`No place with ID ${id}. Add it in Settings → Places.`);
@@ -556,7 +576,6 @@
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) day = today;
     const pf = r.params.get('p') || '';
     const [allPlaces, dayRecs, allRecs, settings, reportPhotos] = await Promise.all([DB.getPlaces(true), DB.getRecordsByDate(day), DB.getAllRecords(), DB.getSettings(), DB.getMeta('reportPhotos', true)]);
-    const canShare = U.canShareFiles();
     const pm = new Map(allPlaces.map((p) => [p.id, p]));
     const pName = (pid) => (pm.get(pid) || { name: '(deleted place)' }).name;
     const working = L.isWorkingDay(day, settings);
@@ -612,11 +631,10 @@
       </div>
       <section class="card"><div class="card-title"><h2>Records <span class="badge">${events.filter((e) => e.kind === 'record').length}</span></h2></div>${timeline}</section>
       <section class="card"><div class="card-title"><h2>Missed checks <span class="badge ${missed.length && working ? 'badge-action' : ''}">${working ? missed.length : '–'}</span></h2></div>${missedHtml}</section>
-      ${reportCardHTML(reportPhotos, canShare, 'Daily report (PDF)', 'Everything from this day in one file: records with notes and photos, missed checks and open actions. Send it to the manager.')}`;
+      ${reportCardHTML(reportPhotos, 'Daily report (PDF)', 'Everything from this day in one file: records with notes and photos, missed checks and open actions. Create it, then share it with the manager.')}`;
     const actions = withGlobal({
       'rec-detail': (el) => showRecordDetail(el.dataset.id),
-      'report': (el) => runReport(el, day, day, false),
-      'report-share': (el) => runReport(el, day, day, true),
+      'report': (el) => runReport(el, day, day),
       'pick': () => { const i = document.getElementById('date-input'); if (!i) return; if (i.showPicker) { try { i.showPicker(); return; } catch (e) { /* fall through */ } } i.click(); },
     });
     function mount(root) {
@@ -649,6 +667,9 @@
         <p class="muted small">Version ${APP_VERSION} · ${standalone ? 'Installed (home screen)' : 'Running in browser'}${usage && usage.usage != null ? ' · Storage used: ' + U.fmtBytes(usage.usage) : ''}</p>
         <div class="stack">
           ${app.installEvent && !standalone ? '<button class="btn btn-primary" data-action="install">Install app on home screen</button>' : ''}
+        </div>
+        ${iosInstallHint()}
+        <div class="stack">
           <button class="btn btn-outline" data-action="check-update">Check for update (needs internet)</button>
         </div>
       </section>
@@ -786,7 +807,6 @@
     if (!labelSel) labelSel = new Set(ids);
     for (const id of [...labelSel]) if (!ids.has(id)) labelSel.delete(id);
     const selected = places.filter((p) => labelSel.has(p.id));
-    const canShare = U.canShareFiles();
     const html = `
       <div class="no-print">
         <div class="page-head"><div>${backLink('#/settings', 'Settings')}<h1>QR labels</h1></div></div>
@@ -798,29 +818,26 @@
           <p class="muted small mt">${selected.length} label(s) · ${LB.pageCount(selected.length, layoutKey)} A4 page(s). Print at 100% scale (no "fit to page").</p>
           <div class="stack">
             <button class="btn btn-primary btn-lg" data-action="print" ${selected.length ? '' : 'disabled'}>Print / Save as PDF (system dialog)</button>
-            <button class="btn btn-outline" data-action="pdf" ${selected.length ? '' : 'disabled'}>Download PDF file</button>
-            ${canShare ? `<button class="btn btn-outline" data-action="pdf-share" ${selected.length ? '' : 'disabled'}>Share PDF (email, messenger…)</button>` : ''}
+            <button class="btn btn-outline" data-action="pdf" ${selected.length ? '' : 'disabled'}>Create PDF file (share / download)</button>
           </div>
         </section>
         <h2 class="mb">Preview</h2>
       </div>
       <div class="sheet-preview"><div class="sheet-scaler" id="sheets">${LB.sheetsHTML(selected, layoutKey)}</div></div>`;
-    async function makePdf(el, share) {
+    function makePdf(el) {
+      const label = el.textContent;
       setBusy(el, true, 'Creating PDF…');
       try {
         const blob = LB.buildPDF(selected, layoutKey);
-        const name = 'qr-patrol-labels_' + U.fileStamp() + '.pdf';
-        if (share) { if (!(await U.shareBlob(blob, name, 'QR Patrol labels'))) U.downloadBlob(blob, name); }
-        else { U.downloadBlob(blob, name); U.toast('PDF saved to Downloads'); }
-      } catch (err) { if (!(err && err.name === 'AbortError')) U.toast('PDF failed: ' + (err && err.message || err)); }
-      setBusy(el, false, share ? 'Share PDF (email, messenger…)' : 'Download PDF file');
+        offerFile({ blob, name: 'qr-patrol-labels_' + U.fileStamp() + '.pdf', title: 'QR labels (PDF)', note: selected.length + ' label(s), ' + LB.pageCount(selected.length, layoutKey) + ' A4 page(s)' });
+      } catch (err) { U.toast('PDF failed: ' + (err && err.message || err)); }
+      setBusy(el, false, label);
     }
     const actions = withGlobal({
       'sel-all': () => { labelSel = new Set(ids); render(); },
       'sel-none': () => { labelSel = new Set(); render(); },
       'print': () => window.print(),
-      'pdf': (el) => makePdf(el, false),
-      'pdf-share': (el) => makePdf(el, true),
+      'pdf': (el) => makePdf(el),
     });
     function fit() {
       const wrap = $view.querySelector('.sheet-preview'), scaler = $view.querySelector('#sheets');
@@ -846,7 +863,6 @@
     const today = U.todayKey();
     const first = today.slice(0, 8) + '01';
     const [lastBackupTs, recordCount, placeCount, reportPhotos] = await Promise.all([DB.getMeta('lastBackupTs', 0), DB.countRecords(), DB.getPlaces(true).then((p) => p.length), DB.getMeta('reportPhotos', true)]);
-    const canShare = U.canShareFiles();
     const html = `
       <div class="page-head"><div>${backLink('#/settings', 'Settings')}<h1>Reports &amp; backup</h1></div></div>
       <section class="card">
@@ -857,22 +873,16 @@
         </div>
         <p class="muted small" style="margin:8px 0 0">Used by the PDF report and the Excel export below. For a single day's report you can also use History.</p>
       </section>
-      ${reportCardHTML(reportPhotos, canShare, 'PDF report', 'One section per day: records with notes and photos, missed checks, plus the open actions. Good for a weekly review.')}
+      ${reportCardHTML(reportPhotos, 'PDF report', 'One section per day: records with notes and photos, missed checks, plus the open actions. Good for a weekly review.')}
       <section class="card">
         <h2>Excel export</h2>
         <p class="muted small">Sheets: Records, Open actions, Missed checks. Photos are not included in Excel.</p>
-        <div class="stack">
-          <button class="btn btn-outline" data-action="excel">Download Excel (.xlsx)</button>
-          ${canShare ? '<button class="btn btn-outline" data-action="excel-share">Share Excel</button>' : ''}
-        </div>
+        <button class="btn btn-outline btn-block" data-action="excel">Create Excel file (.xlsx)</button>
       </section>
       <section class="card">
         <h2>Backup</h2>
         <p class="muted small">One file with everything: ${placeCount} place(s), ${recordCount} record(s), photos and settings.<br>Last backup: <b>${lastBackupTs ? U.esc(U.fmtFull(lastBackupTs)) : 'never'}</b></p>
-        <div class="stack">
-          <button class="btn btn-primary" data-action="backup">Download backup (.json)</button>
-          ${canShare ? '<button class="btn btn-outline" data-action="backup-share">Share backup</button>' : ''}
-        </div>
+        <button class="btn btn-primary btn-block" data-action="backup">Create backup file (.json)</button>
         <p class="muted small mt">Keep the file somewhere safe (office PC, cloud drive, email). You need it if the phone is reset or replaced.</p>
       </section>
       <section class="card">
@@ -885,38 +895,33 @@
       if (!from || !to || from > to) { U.toast('Check the date range'); return null; }
       return { from, to };
     }
-    async function excel(el, share) {
+    async function excel(el) {
       const rg = range(); if (!rg) return;
       const label = el.textContent;
       setBusy(el, true, 'Creating…');
       try {
         const res = await EX.buildExcelBlob(rg.from, rg.to);
         const name = 'qr-patrol_' + rg.from.replace(/-/g, '') + '-' + rg.to.replace(/-/g, '') + '.xlsx';
-        if (share) { if (!(await U.shareBlob(res.blob, name, 'QR Patrol export'))) U.downloadBlob(res.blob, name); }
-        else { U.downloadBlob(res.blob, name); U.toast(`Excel saved (${res.counts.records} records, ${res.counts.open} open, ${res.counts.missed} missed)`); }
-      } catch (err) { if (!(err && err.name === 'AbortError')) U.toast('Export failed: ' + (err && err.message || err)); }
+        offerFile({ blob: res.blob, name, title: 'Excel export', note: `${res.counts.records} records, ${res.counts.open} open, ${res.counts.missed} missed` });
+      } catch (err) { U.toast('Export failed: ' + (err && err.message || err)); }
       setBusy(el, false, label);
     }
-    async function backup(el, share) {
+    async function backup(el) {
       const label = el.textContent;
       setBusy(el, true, 'Creating…');
       try {
         const blob = await EX.buildBackupBlob();
-        const name = 'qr-patrol_backup_' + U.fileStamp() + '.json';
-        const how = share ? await shareOrDownload(blob, name, 'QR Patrol backup') : (U.downloadBlob(blob, name), 'downloaded');
-        if (how === 'cancelled') { setBusy(el, false, label); return; }
-        await DB.setMeta('lastBackupTs', Date.now());
-        U.toast('Backup file created (' + U.fmtBytes(blob.size) + ')');
-        render();
-      } catch (err) { if (!(err && err.name === 'AbortError')) U.toast('Backup failed: ' + (err && err.message || err)); setBusy(el, false, label); }
+        offerFile({
+          blob, name: 'qr-patrol_backup_' + U.fileStamp() + '.json', title: 'Backup file', note: placeCount + ' place(s), ' + recordCount + ' record(s)',
+          onDelivered: async () => { await DB.setMeta('lastBackupTs', Date.now()); render(); },
+        });
+      } catch (err) { U.toast('Backup failed: ' + (err && err.message || err)); }
+      setBusy(el, false, label);
     }
     const actions = withGlobal({
-      'report': (el) => { const rg = range(); if (rg) runReport(el, rg.from, rg.to, false); },
-      'report-share': (el) => { const rg = range(); if (rg) runReport(el, rg.from, rg.to, true); },
-      'excel': (el) => excel(el, false),
-      'excel-share': (el) => excel(el, true),
-      'backup': (el) => backup(el, false),
-      'backup-share': (el) => backup(el, true),
+      'report': (el) => { const rg = range(); if (rg) runReport(el, rg.from, rg.to); },
+      'excel': (el) => excel(el),
+      'backup': (el) => backup(el),
     });
     function mount(root) {
       root.querySelector('#restore-file').addEventListener('change', async (e) => {

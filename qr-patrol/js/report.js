@@ -94,7 +94,9 @@ window.QP = window.QP || {};
       const c = this.ctx;
       c.fillStyle = fill;
       const r = this.px(2);
-      c.beginPath(); c.roundRect(this.px(x), this.px(y), this.px(w), this.px(h), r); c.fill();
+      c.beginPath();
+      if (c.roundRect) c.roundRect(this.px(x), this.px(y), this.px(w), this.px(h), r); else c.rect(this.px(x), this.px(y), this.px(w), this.px(h));
+      c.fill();
     }
     async image(dataUrl, x, maxW, maxH) {
       let img;
