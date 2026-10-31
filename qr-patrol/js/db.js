@@ -63,22 +63,49 @@ window.QP = window.QP || {};
   }
 
   // ---- settings / meta ----
-  const DEFAULT_SETTINGS = { workingDays: [1, 2, 3, 4, 5] };
+  const DEFAULT_SETTINGS = { workingDays: [1, 2, 3, 4, 5], offDays: [] };
   async function getMeta(key, def) { const m = await get('meta', key); return m ? m.value : def; }
   async function setMeta(key, value) { return put('meta', { key, value }); }
-  async function getSettings() { return Object.assign({}, DEFAULT_SETTINGS, (await getMeta('settings', null)) || {}); }
+  async function getSettings() {
+    const s = Object.assign({}, DEFAULT_SETTINGS, (await getMeta('settings', null)) || {});
+    if (!Array.isArray(s.workingDays)) s.workingDays = DEFAULT_SETTINGS.workingDays.slice();
+    if (!Array.isArray(s.offDays)) s.offDays = [];
+    return s;
+  }
   async function saveSettings(s) { return setMeta('settings', s); }
+  async function toggleOffDay(key, on) {
+    const s = await getSettings();
+    const set = new Set(s.offDays);
+    if (on) set.add(key); else set.delete(key);
+    s.offDays = [...set].sort();
+    await saveSettings(s);
+    return s;
+  }
 
   // ---- places ----
+  // Schedule fields: times (1 or 2 per day) and days (null = every working day, or weekday numbers 0-6).
+  // Older data only had freq (1 or 2); it is converted on read.
+  function normalizePlace(p) {
+    if (!p) return p;
+    p.times = Number(p.times != null ? p.times : p.freq) === 2 ? 2 : 1;
+    let days = null;
+    if (Array.isArray(p.days)) {
+      days = [...new Set(p.days.map(Number).filter((d) => d >= 0 && d <= 6))].sort((a, b) => a - b);
+      if (!days.length) days = null;
+    }
+    p.days = days;
+    delete p.freq;
+    return p;
+  }
   function sortPlaces(a, b) {
     return (a.area || '').localeCompare(b.area || '') || (a.name || '').localeCompare(b.name || '');
   }
   async function getPlaces(includeDeleted) {
-    const all = await getAll('places');
+    const all = (await getAll('places')).map(normalizePlace);
     return (includeDeleted ? all : all.filter((p) => !p.deleted)).sort(sortPlaces);
   }
-  async function getPlace(id) { return get('places', id); }
-  async function savePlace(p) { await put('places', p); return p; }
+  async function getPlace(id) { return normalizePlace(await get('places', id)); }
+  async function savePlace(p) { normalizePlace(p); await put('places', p); return p; }
   async function deletePlace(id) {
     const p = await get('places', id);
     if (!p) return;
@@ -132,7 +159,7 @@ window.QP = window.QP || {};
   async function importAll(data) {
     validateBackup(data);
     await resetAll();
-    await bulkPut('places', data.places);
+    await bulkPut('places', data.places.map((p) => normalizePlace(Object.assign({}, p))));
     await bulkPut('records', data.records);
     await bulkPut('photos', Array.isArray(data.photos) ? data.photos : []);
     await saveSettings(Object.assign({}, DEFAULT_SETTINGS, data.settings || {}));
@@ -145,8 +172,8 @@ window.QP = window.QP || {};
   }
 
   QP.db = {
-    open, getMeta, setMeta, getSettings, saveSettings,
-    getPlaces, getPlace, savePlace, deletePlace, restorePlace, newPlaceId,
+    open, getMeta, setMeta, getSettings, saveSettings, toggleOffDay,
+    getPlaces, getPlace, savePlace, deletePlace, restorePlace, newPlaceId, normalizePlace,
     getAllRecords, getRecordsByDate, getRecordsByPlace, getOpenActions, getRecord, saveRecord, getPhoto, deleteRecord, countRecords,
     resetAll, exportAll, importAll, validateBackup, estimateUsage, DEFAULT_SETTINGS,
   };

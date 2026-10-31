@@ -144,7 +144,7 @@ window.QP = window.QP || {};
     P.text(ok ? 'OK' : 'ACTION NEEDED', X + W, top, { size: 3.6, weight: 700, color: ok ? C.ok : C.action, align: 'right' });
     if (!ok) P.text(rec.status === 'DONE' ? 'done ' + U.fmtDateTime(rec.closedTs) : 'open', X + W, top + 5, { size: 2.9, color: C.muted, align: 'right' });
     P.y = top + 5.2;
-    const sub = [place && place.area, place && Number(place.freq) === 2 ? rec.slot : null, rec.manual ? 'manual (no QR)' : null, rec.hasPhoto && !opts.photos ? 'photo on phone' : null].filter(Boolean).join('  ·  ');
+    const sub = [place && place.area, place && L.placeTimes(place) === 2 ? rec.slot : null, rec.extra ? 'extra (not scheduled)' : null, rec.manual ? 'manual (no QR)' : null, rec.hasPhoto && !opts.photos ? 'photo on phone' : null].filter(Boolean).join('  ·  ');
     if (sub) { P.text(sub, colMain, P.y, { size: 3, color: C.muted, maxW: mainW + resultW }); P.y += 4.6; }
     if (rec.note) P.para(rec.note, colMain, mainW + resultW, { size: 3.4 });
     if (opts.photos && rec.hasPhoto) {
@@ -196,11 +196,11 @@ window.QP = window.QP || {};
 
     for (let key = fromKey; key <= toKey; key = U.addDays(key, 1)) {
       const dayRecs = (byDate[key] || []).slice().sort((a, b) => a.ts - b.ts);
-      const working = L.isWorkingDay(key, settings);
-      const status = L.dayStatus(allPlaces, dayRecs, key, now);
+      const working = L.isWorkingDay(key, settings), off = L.isOffDay(key, settings), patrol = working && !off;
+      const status = L.dayStatus(allPlaces, dayRecs, key, now, settings);
       const sum = L.summary(status);
       const missed = [];
-      if (working) for (const st of status) for (const sl of st.slots) if (sl.state === 'missed') missed.push({ place: st.place, slot: sl.slot });
+      if (patrol) for (const st of status) for (const sl of st.slots) if (sl.state === 'missed') missed.push({ place: st.place, slot: sl.slot });
       const events = dayRecs.map((rec) => ({ ts: rec.ts, kind: 'record', rec }));
       for (const rec of actionRecs) {
         for (const f of rec.followUps || []) if (U.dateKey(new Date(f.ts)) === key) events.push({ ts: f.ts, kind: 'NOT_YET', rec });
@@ -212,16 +212,17 @@ window.QP = window.QP || {};
       if (!single) {
         P.ensure(16);
         P.y += 4;
-        P.text(U.fmtDateKey(key, true) + (working ? '' : '  (not a working day)'), X, P.y, { size: 5, weight: 700 });
+        P.text(U.fmtDateKey(key, true) + (off ? '  (no patrol)' : (working ? '' : '  (not a working day)')), X, P.y, { size: 5, weight: 700 });
         P.y += 7.5;
       }
       summaryTiles(P, [
         { label: 'Checks done', value: sum.done + ' / ' + sum.total, color: sum.total && sum.done === sum.total ? C.ok : C.text },
-        { label: 'Missed', value: working ? String(missed.length) : '–', color: missed.length ? C.missed : C.text },
+        { label: 'Missed', value: patrol ? String(missed.length) : '–', color: missed.length ? C.missed : C.text },
         { label: 'Action needed', value: String(actionsToday), color: actionsToday ? C.action : C.text },
         { label: single ? 'Open actions now' : 'Open actions now', value: String(open.length), color: open.length ? C.action : C.text },
       ]);
-      if (!working) P.para('Not a working day. Checks were optional.', X, W, { size: 3.2, color: C.muted });
+      if (off) P.para('Marked as a no-patrol day (holiday / absence). No checks were required.', X, W, { size: 3.2, color: C.muted });
+      else if (!working) P.para('Not a working day. No checks were scheduled.', X, W, { size: 3.2, color: C.muted });
 
       sectionTitle(P, 'Records (' + dayRecs.length + ')');
       if (!events.length) P.para('No records on this day.', X, W, { size: 3.6, color: C.muted });
@@ -231,8 +232,9 @@ window.QP = window.QP || {};
         else drawFollowUp(P, e, place);
       }
 
-      sectionTitle(P, 'Missed checks (' + (working ? missed.length : '–') + ')');
-      if (!working) P.para('Not a working day. No checks were required.', X, W, { size: 3.6, color: C.muted });
+      sectionTitle(P, 'Missed checks (' + (patrol ? missed.length : '–') + ')');
+      if (off) P.para('No-patrol day. Nothing is counted as missed.', X, W, { size: 3.6, color: C.muted });
+      else if (!working) P.para('Not a working day. No checks were required.', X, W, { size: 3.6, color: C.muted });
       else if (!missed.length) P.para(key === today ? 'Nothing missed so far today.' : 'No missed checks.', X, W, { size: 3.6, color: C.muted });
       else {
         for (const m of missed) {

@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const U = QP.util, DB = QP.db, L = QP.logic, SC = QP.scanner, LB = QP.labels, EX = QP.exporter, RP = QP.report;
-  const APP_VERSION = '1.2.0';
+  const APP_VERSION = '1.3.0';
   const $view = document.getElementById('view');
   const $modalRoot = document.getElementById('modal-root');
   const app = { current: null, seq: 0, installEvent: null, swReg: null, updateReady: false };
@@ -10,18 +10,18 @@
   let visit = { placeId: null, asked: new Set() };
 
   const SAMPLE_PLACES = [
-    { id: 'ADM1LB', name: 'Admin Building Lobby', area: 'Admin Block', freq: 1 },
-    { id: 'CCR2RM', name: 'Central Control Room', area: 'Admin Block', freq: 2 },
-    { id: 'CAN2KT', name: 'Canteen & Kitchen', area: 'Admin Block', freq: 2 },
-    { id: 'LKR2SH', name: 'Locker Room & Showers', area: 'Admin Block', freq: 2 },
-    { id: 'TBH2GF', name: 'Turbine Hall Ground Floor', area: 'Turbine Hall', freq: 2 },
-    { id: 'TBH1OF', name: 'Turbine Hall Operating Floor', area: 'Turbine Hall', freq: 1 },
-    { id: 'BLR2L0', name: 'Boiler Area Level 0', area: 'Boiler Area', freq: 2 },
-    { id: 'WTP1PL', name: 'Water Treatment Plant', area: 'Water Treatment', freq: 1 },
-    { id: 'CHM1ST', name: 'Chemical Store', area: 'Water Treatment', freq: 1 },
-    { id: 'SWY1EN', name: 'Switchyard Entrance', area: 'Switchyard', freq: 1 },
-    { id: 'WHS1WS', name: 'Warehouse & Workshop', area: 'Yard', freq: 1 },
-    { id: 'WST2CP', name: 'Waste Collection Point', area: 'Yard', freq: 2 },
+    { id: 'ADM1LB', name: 'Admin Building Lobby', area: 'Admin Block', times: 1, days: null },
+    { id: 'CCR2RM', name: 'Central Control Room', area: 'Admin Block', times: 2, days: null },
+    { id: 'CAN2KT', name: 'Canteen & Kitchen', area: 'Admin Block', times: 2, days: null },
+    { id: 'LKR2SH', name: 'Locker Room & Showers', area: 'Admin Block', times: 2, days: null },
+    { id: 'TBH2GF', name: 'Turbine Hall Ground Floor', area: 'Turbine Hall', times: 2, days: null },
+    { id: 'TBH1OF', name: 'Turbine Hall Operating Floor', area: 'Turbine Hall', times: 1, days: null },
+    { id: 'BLR2L0', name: 'Boiler Area Level 0', area: 'Boiler Area', times: 2, days: null },
+    { id: 'WTP1PL', name: 'Water Treatment Plant', area: 'Water Treatment', times: 1, days: null },
+    { id: 'CHM1ST', name: 'Chemical Store', area: 'Water Treatment', times: 1, days: [1, 4] },
+    { id: 'SWY1EN', name: 'Switchyard Entrance', area: 'Switchyard', times: 1, days: [1, 3, 5] },
+    { id: 'WHS1WS', name: 'Warehouse & Workshop', area: 'Yard', times: 1, days: [2, 5] },
+    { id: 'WST2CP', name: 'Waste Collection Point', area: 'Yard', times: 2, days: null },
   ];
 
   // ---------------- Modal helpers ----------------
@@ -218,9 +218,11 @@
       DB.getPlaces(), DB.getPlaces(true), DB.getRecordsByDate(today), DB.getOpenActions(), DB.getSettings(), DB.getMeta('lastBackupTs', 0), DB.countRecords(),
     ]);
     const pm = new Map(allPlaces.map((p) => [p.id, p]));
-    const status = L.dayStatus(places, recs, today, now);
+    const status = L.dayStatus(places, recs, today, now, settings);
     const sum = L.summary(status);
-    const working = L.isWorkingDay(today, settings);
+    const working = L.isWorkingDay(today, settings), off = L.isOffDay(today, settings);
+    const dueIds = new Set(status.map((s) => s.place.id));
+    const notToday = places.filter((p) => !dueIds.has(p.id));
     open.sort((a, b) => a.ts - b.ts);
 
     const backupDue = recordCount > 0 && (!lastBackupTs || Date.now() - lastBackupTs > 7 * 86400000);
@@ -230,14 +232,24 @@
     let checksHtml = '';
     if (!places.length) {
       checksHtml = '<p class="muted">No places yet. Add places in Settings → Places.</p>';
+    } else if (!status.length) {
+      checksHtml = `<p class="muted">${off ? 'Marked as a no-patrol day. Nothing is scheduled.' : (!working ? 'Not a working day. Nothing is scheduled.' : 'No places are scheduled for today.')}</p>`;
     } else {
       for (const [area, items] of groups) {
         checksHtml += `<div class="group-title">${U.esc(area)}</div><ul class="list">` + items.map((s) => `
           <li><button class="item" data-action="place-detail" data-id="${U.esc(s.place.id)}">
-            <div class="item-main"><div class="item-title">${U.esc(s.place.name)}</div></div>
-            <div class="chips">${s.slots.map((sl) => slotChip(sl, s.place.freq === 2)).join('')}</div>
+            <div class="item-main"><div class="item-title">${U.esc(s.place.name)}</div>${L.placeDays(s.place) ? `<div class="item-sub">${U.esc(L.daysLabel(L.placeDays(s.place)))}</div>` : ''}</div>
+            <div class="chips">${s.slots.map((sl) => slotChip(sl, L.placeTimes(s.place) === 2)).join('')}</div>
           </button></li>`).join('') + '</ul>';
       }
+    }
+    if (notToday.length) {
+      checksHtml += `<details class="panel"><summary>Not today: ${notToday.length} place${notToday.length === 1 ? '' : 's'}</summary><ul class="list">` + notToday.map((p) => {
+        const next = L.nextDueKey(p, today, settings);
+        return `<li><button class="item" data-action="place-detail" data-id="${U.esc(p.id)}" style="min-height:48px;padding:8px 2px">
+          <div class="item-main"><div class="item-title" style="font-weight:600">${U.esc(p.name)}</div><div class="item-sub">${U.esc(L.scheduleLabel(p))}${next ? ' · next: ' + U.esc(U.fmtDateKey(next)) : ''}</div></div>
+        </button></li>`;
+      }).join('') + '</ul></details>';
     }
     const openHtml = open.length ? '<ul class="list">' + open.map((r) => {
       const p = pm.get(r.placeId) || { name: '(deleted place)' };
@@ -255,7 +267,7 @@
       </section>
       ${updateBanner()}
       <a class="btn btn-primary btn-lg btn-block mb" href="#/scan">Scan QR</a>
-      ${!working ? '<div class="banner info">Not a working day. Checks are optional today.</div>' : ''}
+      ${off ? '<div class="banner info"><span>Today is marked as a no-patrol day (holiday / absence).</span><a class="btn btn-outline" href="#/history">Change</a></div>' : (!working ? '<div class="banner info">Not a working day. No checks are scheduled.</div>' : '')}
       ${backupDue ? `<div class="banner warn"><span>${lastBackupTs ? 'Last backup was ' + U.daysSince(lastBackupTs) + ' days ago.' : 'No backup yet.'}</span><a class="btn btn-outline" href="#/export">Back up</a></div>` : ''}
       ${app.installEvent && !standalone ? '<div class="banner info"><span>Install the app on the home screen for offline use.</span><button class="btn btn-primary" data-action="install">Install</button></div>' : ''}
       ${iosInstallHint()}
@@ -282,13 +294,13 @@
     const list = recs.length ? '<ul class="list">' + recs.map((r) => `
       <li><button class="item" data-rec="${U.esc(r.id)}">
         <div class="item-time">${U.esc(U.fmtShortDate(r.ts))}<br>${U.fmtTime(r.ts)}</div>
-        <div class="item-main"><div class="item-title">${resultLabel(r.result)}${place.freq === 2 ? `<span class="tag">${r.slot}</span>` : ''}${r.manual ? '<span class="tag">manual</span>' : ''}</div><div class="item-sub">${r.note ? U.esc(r.note) : ''}</div></div>
+        <div class="item-main"><div class="item-title">${resultLabel(r.result)}${L.placeTimes(place) === 2 ? `<span class="tag">${r.slot}</span>` : ''}${r.extra ? '<span class="tag">extra</span>' : ''}${r.manual ? '<span class="tag">manual</span>' : ''}</div><div class="item-sub">${r.note ? U.esc(r.note) : ''}</div></div>
         <div class="item-right">${resultChip(r)}</div>
       </button></li>`).join('') + '</ul>' : '<p class="muted">No records yet.</p>';
     const m = openModal(`
       <div class="eyebrow muted small">${U.esc(place.area || '')}</div>
       <h2>${U.esc(place.name)}</h2>
-      <p class="muted small">${place.freq === 2 ? 'Twice a day (AM / PM)' : 'Once a day'} · ID <span class="mono">${U.esc(place.id)}</span></p>
+      <p class="muted small">${U.esc(L.scheduleLabel(place))} · ID <span class="mono">${U.esc(place.id)}</span></p>
       <h3 class="mt">Recent records</h3>${list}
       <div class="modal-actions"><button class="btn btn-outline" data-close>Close</button></div>`);
     m.querySelectorAll('[data-rec]').forEach((b) => b.addEventListener('click', () => showRecordDetail(b.dataset.rec)));
@@ -419,6 +431,8 @@
     if (!place) return simpleView('Unknown place', 'This QR code does not match any place.', '#/scan', 'Back to scanner');
     if (visit.placeId !== id) visit = { placeId: id, asked: new Set() };
     const now = new Date(), today = U.todayKey(), slot = U.slotOf(now);
+    const settings = await DB.getSettings();
+    const due = L.isDueOn(place, today, settings), times = L.placeTimes(place);
     const recs = (await DB.getRecordsByPlace(id)).sort((a, b) => b.ts - a.ts);
     const last = recs[0] || null;
     const openList = recs.filter((x) => x.result === 'ACTION' && x.status === 'OPEN').sort((a, b) => a.ts - b.ts);
@@ -426,8 +440,9 @@
     const fu = pending[0] || null;
     const fuPhoto = fu && fu.hasPhoto ? await DB.getPhoto(fu.id) : null;
     const todayRecs = recs.filter((x) => x.date === today);
-    const already = Number(place.freq) === 2 ? todayRecs.find((x) => x.slot === slot) : todayRecs[0];
-    const slotText = Number(place.freq) === 2 ? (slot === 'AM' ? 'Morning check (AM)' : 'Afternoon check (PM)') : 'Daily check';
+    const already = times === 2 ? todayRecs.find((x) => x.slot === slot) : todayRecs[0];
+    const slotText = !due ? 'Extra check' : (times === 2 ? (slot === 'AM' ? 'Morning check (AM)' : 'Afternoon check (PM)') : 'Daily check');
+    const whyNotDue = L.isOffDay(today, settings) ? 'today is marked as a no-patrol day' : (!L.isWorkingDay(today, settings) ? 'not a working day' : 'schedule: ' + L.scheduleLabel(place));
     let photoData = null, saving = false;
 
     const head = `
@@ -455,7 +470,8 @@
       body = `
         <section class="card">
           <div class="card-title"><h2>${slotText}</h2><span class="muted small">${U.esc(U.fmtDateKey(today))}</span></div>
-          ${already ? `<div class="banner info">Already checked ${Number(place.freq) === 2 ? 'this ' + (slot === 'AM' ? 'morning' : 'afternoon') : 'today'} at ${U.fmtTime(already.ts)} (${resultLabel(already.result)}). Saving again adds another record.</div>` : ''}
+          ${!due ? `<div class="banner warn"><span>Not scheduled today (${U.esc(whyNotDue)}). It will be saved as an extra check.</span></div>` : ''}
+          ${already ? `<div class="banner info">Already checked ${times === 2 ? 'this ' + (slot === 'AM' ? 'morning' : 'afternoon') : 'today'} at ${U.fmtTime(already.ts)} (${resultLabel(already.result)}). Saving again adds another record.</div>` : ''}
           <details class="panel" id="note-panel">
             <summary>Add note / photo (optional)</summary>
             <div class="panel-body">
@@ -483,7 +499,7 @@
       saving = true; setButtons(true);
       try {
         const noteEl = document.getElementById('note');
-        const rec = { id: U.uid(), placeId: id, ts: Date.now(), date: U.todayKey(), slot: U.slotOf(new Date()), result, note: noteEl ? noteEl.value.trim() : '', hasPhoto: !!photoData, manual };
+        const rec = { id: U.uid(), placeId: id, ts: Date.now(), date: U.todayKey(), slot: U.slotOf(new Date()), result, note: noteEl ? noteEl.value.trim() : '', hasPhoto: !!photoData, manual, extra: !due };
         if (result === 'ACTION') { rec.status = 'OPEN'; rec.followUps = []; }
         await DB.saveRecord(rec, photoData);
         U.vibrate(result === 'OK' ? 60 : [60, 60, 60]);
@@ -558,7 +574,7 @@
       <section class="card done-screen">
         <div class="done-icon ${ok ? 'ok' : 'action'}">${ok ? '✓' : '!'}</div>
         <h1>Saved</h1>
-        <p class="muted">${U.esc(place ? place.name : '')} · ${U.esc(U.fmtDateTime(rec.ts))}${place && Number(place.freq) === 2 ? ' · ' + rec.slot : ''}</p>
+        <p class="muted">${U.esc(place ? place.name : '')} · ${U.esc(U.fmtDateTime(rec.ts))}${place && L.placeTimes(place) === 2 ? ' · ' + rec.slot : ''}${rec.extra ? ' · extra check' : ''}</p>
         <p><span class="result-badge ${ok ? 'result-ok' : 'result-action'}">${resultLabel(rec.result)}</span></p>
         ${rec.note ? `<div class="note-text">${U.esc(rec.note)}</div>` : ''}
         <div class="stack mt">
@@ -578,8 +594,8 @@
     const [allPlaces, dayRecs, allRecs, settings, reportPhotos] = await Promise.all([DB.getPlaces(true), DB.getRecordsByDate(day), DB.getAllRecords(), DB.getSettings(), DB.getMeta('reportPhotos', true)]);
     const pm = new Map(allPlaces.map((p) => [p.id, p]));
     const pName = (pid) => (pm.get(pid) || { name: '(deleted place)' }).name;
-    const working = L.isWorkingDay(day, settings);
-    const status = L.dayStatus(allPlaces, dayRecs, day, now);
+    const working = L.isWorkingDay(day, settings), off = L.isOffDay(day, settings), patrol = working && !off;
+    const status = L.dayStatus(allPlaces, dayRecs, day, now, settings);
     const missed = [];
     for (const st of status) for (const sl of st.slots) if (sl.state === 'missed' && (!pf || st.place.id === pf)) missed.push({ place: st.place, slot: sl.slot });
 
@@ -597,7 +613,7 @@
         const rec = e.rec;
         return `<li><button class="item" data-action="rec-detail" data-id="${U.esc(rec.id)}">
           <div class="item-time">${U.fmtTime(rec.ts)}</div>
-          <div class="item-main"><div class="item-title">${U.esc(pName(rec.placeId))}${place && Number(place.freq) === 2 ? `<span class="tag">${rec.slot}</span>` : ''}${rec.manual ? '<span class="tag">manual</span>' : ''}${rec.hasPhoto ? '<span class="tag">photo</span>' : ''}</div>
+          <div class="item-main"><div class="item-title">${U.esc(pName(rec.placeId))}${place && L.placeTimes(place) === 2 ? `<span class="tag">${rec.slot}</span>` : ''}${rec.extra ? '<span class="tag">extra</span>' : ''}${rec.manual ? '<span class="tag">manual</span>' : ''}${rec.hasPhoto ? '<span class="tag">photo</span>' : ''}</div>
           <div class="item-sub">${rec.note ? U.esc(rec.note) : ''}</div></div>
           <div class="item-right">${resultChip(rec)}${rec.result === 'ACTION' ? `<span class="tag ${rec.status === 'DONE' ? 'tag-ok' : 'tag-action'}">${rec.status === 'DONE' ? 'done' : 'open'}</span>` : ''}</div>
         </button></li>`;
@@ -610,8 +626,8 @@
       </button></li>`;
     }).join('') + '</ul>' : '<p class="muted" style="margin:0">No records on this day.</p>';
 
-    const missedHtml = !working
-      ? '<p class="muted" style="margin:0">Not a working day. No checks were required.</p>'
+    const missedHtml = !patrol
+      ? `<p class="muted" style="margin:0">${off ? 'Marked as a no-patrol day. Nothing is counted as missed.' : 'Not a working day. No checks were required.'}</p>`
       : (missed.length ? '<ul class="list">' + missed.map((m) => `<li class="item"><div class="item-main"><div class="item-title">${U.esc(m.place.name)}</div><div class="item-sub">${U.esc(m.place.area || '')}</div></div><span class="chip chip-missed">${m.slot === 'DAY' ? 'Missed' : m.slot + ' missed'}</span></li>`).join('') + '</ul>'
         : `<p class="muted" style="margin:0">${day === today ? 'Nothing missed so far.' : 'No missed checks.'}</p>`);
 
@@ -630,7 +646,8 @@
         ${day !== today ? `<a class="btn btn-outline" href="${link(today, pf)}">Today</a>` : ''}
       </div>
       <section class="card"><div class="card-title"><h2>Records <span class="badge">${events.filter((e) => e.kind === 'record').length}</span></h2></div>${timeline}</section>
-      <section class="card"><div class="card-title"><h2>Missed checks <span class="badge ${missed.length && working ? 'badge-action' : ''}">${working ? missed.length : '–'}</span></h2></div>${missedHtml}</section>
+      <section class="card"><div class="card-title"><h2>Missed checks <span class="badge ${missed.length && patrol ? 'badge-action' : ''}">${patrol ? missed.length : '–'}</span></h2></div>${missedHtml}</section>
+      ${working ? `<section class="card"><label class="row gap" style="align-items:flex-start"><input type="checkbox" id="off-day" ${off ? 'checked' : ''} style="width:24px;height:24px;flex-shrink:0;margin-top:2px"><span><b>No patrol on this day</b><br><span class="muted small">Holiday or absence. Nothing is counted as missed on this day.</span></span></label></section>` : ''}
       ${reportCardHTML(reportPhotos, 'Daily report (PDF)', 'Everything from this day in one file: records with notes and photos, missed checks and open actions. Create it, then share it with the manager.')}`;
     const actions = withGlobal({
       'rec-detail': (el) => showRecordDetail(el.dataset.id),
@@ -640,6 +657,8 @@
     function mount(root) {
       root.querySelector('#date-input').addEventListener('change', (e) => { if (e.target.value) location.hash = link(e.target.value, pf); });
       root.querySelector('#place-filter').addEventListener('change', (e) => { location.hash = link(day, e.target.value); });
+      const offCb = root.querySelector('#off-day');
+      if (offCb) offCb.addEventListener('change', async () => { await DB.toggleOffDay(day, offCb.checked); U.toast(offCb.checked ? 'Marked as no-patrol day' : 'No-patrol mark removed'); render(); });
     }
     return { html, actions, mount };
   }
@@ -738,7 +757,7 @@
       list += `<div class="group-title">${U.esc(area)}</div><ul class="list">` + items.map((p) => `
         <li><a class="item" href="#/place/${encodeURIComponent(p.id)}">
           <div class="item-main"><div class="item-title">${U.esc(p.name)}</div><div class="item-sub mono">${U.esc(p.id)}</div></div>
-          <div class="item-right"><span class="chip ${Number(p.freq) === 2 ? 'chip-done' : 'chip-pending'}">${Number(p.freq) === 2 ? 'AM · PM' : '1× day'}</span><span class="chevron">›</span></div>
+          <div class="item-right"><span class="chip ${L.placeDays(p) ? 'chip-later' : 'chip-pending'}">${U.esc(L.scheduleLabel(p))}</span><span class="chevron">›</span></div>
         </a></li>`).join('') + '</ul>';
     }
     const html = `
@@ -753,35 +772,71 @@
 
   async function viewPlaceForm(r) {
     const isNew = !r.arg || r.arg === 'new';
-    const place = isNew ? { name: '', area: '', freq: 1 } : await DB.getPlace(r.arg);
+    const place = isNew ? { name: '', area: '', times: 1, days: null } : await DB.getPlace(r.arg);
     if (!place) return simpleView('Place not found', 'This place does not exist.', '#/places', 'Back to places');
-    const areas = [...new Set((await DB.getPlaces()).map((p) => p.area).filter(Boolean))].sort();
-    let freq = Number(place.freq) === 2 ? 2 : 1;
+    const [allActive, settings] = await Promise.all([DB.getPlaces(), DB.getSettings()]);
+    const areas = [...new Set(allActive.map((p) => p.area).filter(Boolean))].sort();
+    let times = L.placeTimes(place);
+    let days = L.placeDays(place) ? L.placeDays(place).slice() : null; // null = every working day
+    let chooseDays = !!days;
+    const dayBtns = [1, 2, 3, 4, 5, 6, 0].map((d) => `<button type="button" class="${days && days.includes(d) ? 'on' : ''}" data-action="day" data-d="${d}">${U.DAYS[d]}</button>`).join('');
     const html = `
       <div class="page-head"><div>${backLink('#/places', 'Places')}<h1>${isNew ? 'New place' : 'Edit place'}</h1></div></div>
       <section class="card">
         <label class="field"><span>Place name *</span><input type="text" id="f-name" value="${U.esc(place.name)}" maxlength="60" placeholder="e.g. Turbine Hall Ground Floor" autocomplete="off"></label>
         <label class="field"><span>Area / zone</span><input type="text" id="f-area" value="${U.esc(place.area || '')}" maxlength="40" list="area-list" placeholder="e.g. Turbine Hall" autocomplete="off"><datalist id="area-list">${areas.map((a) => `<option value="${U.esc(a)}">`).join('')}</datalist></label>
-        <div class="field-label">Check frequency</div>
-        <div class="segmented" id="f-freq">
-          <button type="button" class="${freq === 1 ? 'on' : ''}" data-action="freq" data-v="1">Once a day</button>
-          <button type="button" class="${freq === 2 ? 'on' : ''}" data-action="freq" data-v="2">Twice a day (AM / PM)</button>
+        <div class="field-label">Days</div>
+        <div class="segmented" id="f-days">
+          <button type="button" class="${chooseDays ? '' : 'on'}" data-action="daysmode" data-v="all">Every working day</button>
+          <button type="button" class="${chooseDays ? 'on' : ''}" data-action="daysmode" data-v="pick">Choose days</button>
         </div>
-        <p class="muted small" style="margin-top:8px">AM = before 12:00 · PM = after 12:00</p>
+        <div id="f-daypick" class="${chooseDays ? '' : 'hidden'}" style="margin-top:10px">
+          <div class="daytoggles">${dayBtns}</div>
+          <p class="muted small" id="f-daywarn" style="margin:6px 0 0"></p>
+        </div>
+        <div class="field-label" style="margin-top:14px">Times per day</div>
+        <div class="segmented" id="f-times">
+          <button type="button" class="${times === 1 ? 'on' : ''}" data-action="times" data-v="1">Once</button>
+          <button type="button" class="${times === 2 ? 'on' : ''}" data-action="times" data-v="2">Twice (AM / PM)</button>
+        </div>
+        <p class="muted small" style="margin-top:8px">A check is required only on the scheduled days. AM = before 12:00 · PM = after 12:00. Working days: ${U.esc(L.daysLabel(settings.workingDays))} (Settings).</p>
         <div class="stack mt">
           <button class="btn btn-primary btn-lg" data-action="save">Save</button>
           ${isNew ? '' : '<button class="btn btn-outline danger" data-action="delete">Delete place</button>'}
         </div>
       </section>
       ${isNew ? '' : `<section class="card"><h2>QR code</h2><div class="qr-preview mt">${LB.qrSvg(place.id)}<div><div class="mono" style="font-size:1.2rem">${U.esc(place.id)}</div><p class="muted small">Print labels from Settings → QR labels.</p></div></div></section>`}`;
+    function updateWarn() {
+      const w = document.getElementById('f-daywarn');
+      if (!w) return;
+      if (!chooseDays) { w.textContent = ''; return; }
+      if (!days || !days.length) { w.textContent = 'Select at least one day.'; return; }
+      const notWorking = days.filter((d) => !settings.workingDays.includes(d));
+      w.textContent = notWorking.length ? 'Not a working day in Settings: ' + L.daysLabel(notWorking) + '. No check is required on those days unless you add them to the working days.' : '';
+    }
     const actions = withGlobal({
-      'freq': (el) => { freq = Number(el.dataset.v); document.querySelectorAll('#f-freq button').forEach((b) => b.classList.toggle('on', b === el)); },
+      'daysmode': (el) => {
+        chooseDays = el.dataset.v === 'pick';
+        if (chooseDays && !days) days = [];
+        document.querySelectorAll('#f-days button').forEach((b) => b.classList.toggle('on', b === el));
+        document.getElementById('f-daypick').classList.toggle('hidden', !chooseDays);
+        updateWarn();
+      },
+      'day': (el) => {
+        const d = Number(el.dataset.d);
+        days = days || [];
+        days = days.includes(d) ? days.filter((x) => x !== d) : days.concat([d]);
+        el.classList.toggle('on', days.includes(d));
+        updateWarn();
+      },
+      'times': (el) => { times = Number(el.dataset.v); document.querySelectorAll('#f-times button').forEach((b) => b.classList.toggle('on', b === el)); },
       'save': async (el) => {
         const name = document.getElementById('f-name').value.trim();
         const area = document.getElementById('f-area').value.trim();
         if (!name) { U.toast('Please enter a place name'); document.getElementById('f-name').focus(); return; }
+        if (chooseDays && (!days || !days.length)) { U.toast('Select at least one day'); return; }
         el.disabled = true;
-        const p = Object.assign({}, place, { name, area, freq });
+        const p = Object.assign({}, place, { name, area, times, days: chooseDays ? days.slice().sort((a, b) => a - b) : null });
         if (isNew) { p.id = await DB.newPlaceId(); p.createdTs = Date.now(); }
         await DB.savePlace(p);
         U.toast(isNew ? 'Place added' : 'Place saved');
@@ -795,7 +850,7 @@
         location.hash = '#/places';
       },
     });
-    return { html, actions, mount: () => { if (isNew) document.getElementById('f-name').focus(); } };
+    return { html, actions, mount: () => { updateWarn(); if (isNew) document.getElementById('f-name').focus(); } };
   }
 
   // ---------------- LABELS ----------------
