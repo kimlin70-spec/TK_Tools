@@ -2,27 +2,34 @@
 (function () {
   'use strict';
   const U = QP.util, DB = QP.db, L = QP.logic, SC = QP.scanner, LB = QP.labels, EX = QP.exporter, RP = QP.report;
-  const APP_VERSION = '1.3.0';
+  const APP_VERSION = '1.4.0';
   const $view = document.getElementById('view');
   const $modalRoot = document.getElementById('modal-root');
   const app = { current: null, seq: 0, installEvent: null, swReg: null, updateReady: false };
   // Follow-up questions already answered "Not yet" during the current visit of a place
   let visit = { placeId: null, asked: new Set() };
 
-  const SAMPLE_PLACES = [
-    { id: 'ADM1LB', name: 'Admin Building Lobby', area: 'Admin Block', times: 1, days: null },
-    { id: 'CCR2RM', name: 'Central Control Room', area: 'Admin Block', times: 2, days: null },
-    { id: 'CAN2KT', name: 'Canteen & Kitchen', area: 'Admin Block', times: 2, days: null },
-    { id: 'LKR2SH', name: 'Locker Room & Showers', area: 'Admin Block', times: 2, days: null },
-    { id: 'TBH2GF', name: 'Turbine Hall Ground Floor', area: 'Turbine Hall', times: 2, days: null },
-    { id: 'TBH1OF', name: 'Turbine Hall Operating Floor', area: 'Turbine Hall', times: 1, days: null },
-    { id: 'BLR2L0', name: 'Boiler Area Level 0', area: 'Boiler Area', times: 2, days: null },
-    { id: 'WTP1PL', name: 'Water Treatment Plant', area: 'Water Treatment', times: 1, days: null },
-    { id: 'CHM1ST', name: 'Chemical Store', area: 'Water Treatment', times: 1, days: [1, 4] },
-    { id: 'SWY1EN', name: 'Switchyard Entrance', area: 'Switchyard', times: 1, days: [1, 3, 5] },
-    { id: 'WHS1WS', name: 'Warehouse & Workshop', area: 'Yard', times: 1, days: [2, 5] },
-    { id: 'WST2CP', name: 'Waste Collection Point', area: 'Yard', times: 2, days: null },
-  ];
+  /* Site place list (boiler area, units 1-3 plus common). Fixed IDs are printed on the QR labels,
+   * so a reset or a new phone gets the same places back. Days: 1 = Mon … 5 = Fri. */
+  const SITE_PLACES = (() => {
+    const MWF = [1, 3, 5], TUE = [2], WED = [3], THU = [4];
+    const units = [1, 2, 3].flatMap((n) => [
+      { id: `B${n}CFDR`, name: `Boiler #${n} Coal Feeder`, times: 2, days: null },
+      { id: `B${n}GRND`, name: `Boiler #${n} Ground Floor`, times: 2, days: null },
+      { id: `B${n}FESO`, name: `Boiler #${n} Furnace Entrance South`, times: 1, days: MWF },
+      { id: `B${n}FENO`, name: `Boiler #${n} Furnace Entrance North`, times: 1, days: MWF },
+      { id: `B${n}CCPP`, name: `Boiler #${n} Coal Chute Pipe Platform`, times: 1, days: null },
+      { id: `B${n}SSFP`, name: `Boiler #${n} Sand Screw Feeder Platform`, times: 1, days: null },
+      { id: `B${n}BRNR`, name: `Boiler #${n} Burner`, times: 1, days: n === 3 ? THU : TUE },
+      { id: `B${n}SDTH`, name: `Boiler #${n} Steam Drum & Terminal Header`, times: 1, days: n === 1 ? TUE : (n === 2 ? THU : WED) },
+    ].map((p) => Object.assign(p, { area: `Boiler #${n}` })));
+    const common = [
+      { id: 'BCBHSO', name: 'Coal Bunker House South Stair Landing', area: 'Boiler Common', times: 1, days: TUE },
+      { id: 'BCBHNO', name: 'Coal Bunker House North Stair Landing', area: 'Boiler Common', times: 1, days: THU },
+      { id: 'BCCFSL', name: 'Coal Feeder Mid-Stair Landing', area: 'Boiler Common', times: 1, days: THU },
+    ];
+    return units.concat(common);
+  })();
 
   // ---------------- Modal helpers ----------------
   function closeModal() { $modalRoot.innerHTML = ''; document.body.style.overflow = ''; }
@@ -231,7 +238,7 @@
     const groups = groupByArea(status, (s) => s.place);
     let checksHtml = '';
     if (!places.length) {
-      checksHtml = '<p class="muted">No places yet. Add places in Settings → Places.</p>';
+      checksHtml = '<p class="muted">No places yet. Load the site places in Settings → Data, or add places in Settings → Places.</p>';
     } else if (!status.length) {
       checksHtml = `<p class="muted">${off ? 'Marked as a no-patrol day. Nothing is scheduled.' : (!working ? 'Not a working day. Nothing is scheduled.' : 'No places are scheduled for today.')}</p>`;
     } else {
@@ -694,9 +701,9 @@
       </section>
       <section class="card">
         <h2>Data</h2>
-        <p class="muted small">Sample places are provided for testing. Before real use, reset all data and add your own places.</p>
+        <p class="muted small">The site place list (${SITE_PLACES.length} boiler-area places with fixed QR IDs) is built into the app and loaded on first start. "Load site places" adds any that are missing and never changes existing places.</p>
         <div class="stack">
-          <button class="btn btn-outline" data-action="load-samples">Load sample places</button>
+          <button class="btn btn-outline" data-action="load-samples">Load site places</button>
           <button class="btn btn-outline danger" data-action="reset">Reset all data</button>
         </div>
       </section>
@@ -718,8 +725,8 @@
         } catch (e) { setBusy(el, false, 'Check for update (needs internet)'); U.toast('Update check failed.'); }
       },
       'load-samples': async () => {
-        const n = await loadSamples();
-        U.toast(n ? n + ' sample places added' : 'Sample places already exist');
+        const n = await loadSitePlaces();
+        U.toast(n ? n + ' site place(s) added' : 'All site places already exist');
         render();
       },
       'reset': async () => {
@@ -729,19 +736,19 @@
         if (!again) return;
         await DB.resetAll();
         await DB.setMeta('seeded', true);
-        U.toast('All data deleted');
-        location.hash = '#/home';
+        U.toast('All data deleted. Use "Load site places" to start again.');
+        render();
       },
     });
     return { html, actions };
   }
 
-  async function loadSamples() {
+  async function loadSitePlaces() {
     let n = 0;
-    for (const s of SAMPLE_PLACES) {
+    for (const s of SITE_PLACES) {
       const existing = await DB.getPlace(s.id);
       if (existing) continue;
-      await DB.savePlace(Object.assign({}, s, { createdTs: Date.now(), sample: true }));
+      await DB.savePlace(Object.assign({}, s, { days: s.days ? s.days.slice() : null, createdTs: Date.now(), preset: true }));
       n++;
     }
     return n;
@@ -1003,7 +1010,7 @@
   // ---------------- Bootstrap ----------------
   async function seedIfNeeded() {
     if (await DB.getMeta('seeded', false)) return;
-    if ((await DB.getPlaces(true)).length === 0) await loadSamples();
+    if ((await DB.getPlaces(true)).length === 0) await loadSitePlaces();
     await DB.setMeta('seeded', true);
   }
   function registerSW() {
@@ -1036,6 +1043,6 @@
     if (!location.hash) location.replace('#/home');
     render();
   }
-  QP.app = { render, APP_VERSION, loadSamples, SAMPLE_PLACES };
+  QP.app = { render, APP_VERSION, loadSitePlaces, loadSamples: loadSitePlaces, SITE_PLACES };
   init();
 })();

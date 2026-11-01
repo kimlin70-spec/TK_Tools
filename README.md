@@ -28,9 +28,31 @@
 | **Settings → Places** | 장소 추가/수정/삭제(장소명, 구역, **요일**: 매 근무일 또는 요일 지정, **하루 횟수**: 1회 또는 2회). 하루 2회는 **오전(12시 전)·오후(12시 후)** 회차로 구분. 삭제한 장소는 복원 가능 |
 | **Settings → QR labels** | 장소마다 QR 1개(내용은 장소 ID만). A4 한 장에 6/8/15개 배치 미리보기, **인쇄 / PDF 저장(시스템 대화상자)**, **PDF 파일 다운로드**, **PDF 공유** |
 | **Settings → Reports, Excel & backup** | 기간별 **PDF 보고서**(기록·메모·사진·누락·미조치), 엑셀 내보내기(기록 + 미조치 + 누락 시트), 전체 데이터 **백업 파일(.json) 저장/공유**, **복원** |
-| **Settings** | 근무 요일(누락 계산에 사용, 기본 월~금), 앱 설치 버튼, 업데이트 확인, **샘플 장소 불러오기**, **전체 초기화(Reset all data)** |
+| **Settings** | 근무 요일(누락 계산에 사용, 기본 월~금), 앱 설치 버튼, 업데이트 확인, **현장 기본 장소 불러오기(Load site places)**, **전체 초기화(Reset all data)** |
 
-처음 실행하면 테스트용 **샘플 장소 12개**(요일 지정 예시 3곳 포함)가 자동으로 들어 있습니다. 실제 사용 전에 `Settings → Reset all data`로 모두 지운 뒤 실제 장소를 등록하세요.
+처음 실행하면 **현장 기본 장소 27개**(보일러 1·2·3호기 + 공용, 아래 표)가 자동으로 들어 있습니다. 각 장소의 QR ID가 앱에 고정되어 있어서 폰을 바꾸거나 초기화해도 같은 라벨을 계속 쓸 수 있습니다.
+예전 버전의 테스트용 샘플 장소가 들어 있는 폰은 `Settings → Reset all data` 후 `Settings → Data → Load site places`를 누르면 됩니다.
+
+### 기본 장소 목록 (근무일 월~금 기준)
+
+| 장소 (Area: Boiler #1 / #2 / #3) | Days | 하루 횟수 | ID (#1 / #2 / #3) |
+|---|---|---|---|
+| Boiler #n Coal Feeder | 매 근무일 | 2 (AM/PM) | B1CFDR / B2CFDR / B3CFDR |
+| Boiler #n Ground Floor | 매 근무일 | 2 (AM/PM) | B1GRND / B2GRND / B3GRND |
+| Boiler #n Furnace Entrance South | 월·수·금 | 1 | B1FESO / B2FESO / B3FESO |
+| Boiler #n Furnace Entrance North | 월·수·금 | 1 | B1FENO / B2FENO / B3FENO |
+| Boiler #n Coal Chute Pipe Platform | 매 근무일 | 1 | B1CCPP / B2CCPP / B3CCPP |
+| Boiler #n Sand Screw Feeder Platform | 매 근무일 | 1 | B1SSFP / B2SSFP / B3SSFP |
+| Boiler #n Burner | #1 화 · #2 화 · #3 목 | 1 | B1BRNR / B2BRNR / B3BRNR |
+| Boiler #n Steam Drum & Terminal Header | #1 화 · #2 목 · #3 수 | 1 | B1SDTH / B2SDTH / B3SDTH |
+
+| 장소 (Area: Boiler Common) | Days | 하루 횟수 | ID |
+|---|---|---|---|
+| Coal Bunker House South Stair Landing | 화 | 1 | BCBHSO |
+| Coal Bunker House North Stair Landing | 목 | 1 | BCBHNO |
+| Coal Feeder Mid-Stair Landing | 목 | 1 | BCCFSL |
+
+요일별 점검 횟수: 월 24 · 화 22 · 수 25 · 목 22 · 금 24 (매일 항목 18 포함). 요일이나 횟수는 앱의 장소 수정 화면에서 언제든 바꿀 수 있고, 라벨은 그대로 유효합니다. 목록 자체를 바꾸려면 `qr-patrol/js/app.js`의 `SITE_PLACES`를 수정하세요.
 
 ---
 
@@ -92,6 +114,7 @@
 ## 3. 장소 등록 → QR 라벨 인쇄·부착
 
 ### 3-1. 장소 등록
+기본 장소 27개는 이미 들어 있으므로, 새 장소가 필요할 때만 추가하면 됩니다.
 1. 앱 **Settings → Places → + Add**.
 2. **Place name**(장소명), **Area / zone**(구역)을 입력합니다.
 3. **Days**(요일): `Every working day`(모든 근무일, 기본) 또는 `Choose days`(요일 선택). 예: 이틀에 한 번 → 월·수·금, 주 1회 → 특정 요일 하나.
